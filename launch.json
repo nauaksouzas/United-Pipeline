@@ -3,12 +3,8 @@
   "configurations": [
     {
       "name": "EchoTrack Full-Stack Dev",
-      "runtimeExecutable": "powershell",
-      "runtimeArgs": [
-        "-NoProfile",
-        "-Command",
-        "Set-Location 'C:\\Users\\nauak\\Downloads\\year-up-weekly-report-system'; Start-Process -NoNewWindow -FilePath 'npx' -ArgumentList @('tsx','server.api.ts'); Start-Sleep -Seconds 3; npx vite --port 5173"
-      ],
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "C:\\Users\\nauak\\Downloads\\year-up-weekly-report-system"],
       "port": 5173
     }
   ]
