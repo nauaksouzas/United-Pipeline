@@ -59,14 +59,14 @@ export function SignUp() {
     if (formData.classIds.length === 0) return toast.error('Please select at least one class');
     setLoading(true);
     try {
-      const res = await fetch('/api/signup', { credentials: "omit", 
+      const res = await fetch('/api/signup', { credentials: "include", 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      if (data.token) localStorage.setItem('auth_token', data.token);
+      localStorage.removeItem('auth_token');
       
       toast.success('Registration successful!');
       setTimeout(() => { window.location.href = '/dashboard-redirect'; }, 1000);

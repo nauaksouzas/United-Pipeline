@@ -1,6 +1,4 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { toast } from 'sonner';
 
 interface User {
   id: string;
@@ -24,11 +22,7 @@ export function AuthProvider({ children }: { children: any }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('auth_token');
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
-    fetch('/api/auth/session', { headers, credentials: 'omit' })
+    fetch('/api/auth/session', { credentials: 'include' })
       .then(res => {
         if (!res.ok) return { user: null };
         return res.json();
@@ -42,12 +36,12 @@ export function AuthProvider({ children }: { children: any }) {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'omit',
+      credentials: 'include',
       body: JSON.stringify({ email, password })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
-    if (data.token) localStorage.setItem('auth_token', data.token);
+    localStorage.removeItem('auth_token');
     setUser(data.user);
   };
 
@@ -57,7 +51,7 @@ export function AuthProvider({ children }: { children: any }) {
     const res = await fetch('/api/auth/oauth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'omit',
+      credentials: 'include',
       body: JSON.stringify({ idToken: result.idToken }),
     });
     const data = await res.json();
@@ -68,15 +62,12 @@ export function AuthProvider({ children }: { children: any }) {
       err.name = data.name;
       throw err;
     }
-    if (data.token) localStorage.setItem('auth_token', data.token);
+    localStorage.removeItem('auth_token');
     setUser(data.user);
   };
 
   const logout = async () => {
-    const token = localStorage.getItem('auth_token');
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    await fetch('/api/auth/logout', { method: 'POST', headers, credentials: 'omit' });
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
     localStorage.removeItem('auth_token');
     setUser(null);
   };

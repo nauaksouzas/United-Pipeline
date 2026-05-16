@@ -10,11 +10,14 @@ const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_ksp_override_me';
 
 function getCookieOptions(req: any) {
+  const forwardedProto = req.headers?.['x-forwarded-proto'];
+  const isSecure = req.secure || forwardedProto === 'https' || process.env.NODE_ENV === 'production';
+
   return {
     httpOnly: true,
-    secure: true, // Always true for HTTPS preview environment
-    sameSite: "none" as const, // Required for third-party iframe context
-    path: "/",
+    secure: isSecure,
+    sameSite: (isSecure ? 'none' : 'lax') as 'none' | 'lax',
+    path: '/',
     maxAge: 24 * 60 * 60 * 1000,
   };
 }
@@ -256,6 +259,34 @@ router.post('/reports', authMiddleware, roleMiddleware(['STUDENT']), async (req,
                     reportId: report.id, classId: cr.classId, rating: cr.rating, comment: cr.comment ?? null
                 }))
             });
+        }
+
+        if (payload.targetedAnswers && typeof payload.targetedAnswers === 'object') {
+            const activeQuestions = await prisma.targetedQuestion.findMany({
+                where: {
+                    studentId,
+                    isActive: true,
+                    OR: [{ cycleId: cycle.id }, { cycleId: null }]
+                },
+                select: { id: true }
+            });
+            const allowedQuestionIds = new Set(activeQuestions.map(q => q.id));
+
+            for (const [questionId, rawAnswer] of Object.entries(payload.targetedAnswers)) {
+                if (!allowedQuestionIds.has(questionId)) continue;
+                const answer = String(rawAnswer || '').trim();
+
+                if (!answer) {
+                    await prisma.targetedAnswer.deleteMany({ where: { questionId, reportId: report.id } });
+                    continue;
+                }
+
+                await prisma.targetedAnswer.upsert({
+                    where: { questionId_reportId: { questionId, reportId: report.id } },
+                    update: { answer },
+                    create: { questionId, reportId: report.id, studentId, answer }
+                });
+            }
         }
 
         if (payload.status === 'SUBMITTED') {
@@ -935,7 +966,7 @@ router.get('/student/reports', authMiddleware, roleMiddleware(['STUDENT']), asyn
         const reports = await prisma.weeklyReport.findMany({
             where: { studentId: (req as any).user?.id },
             include: { cycle: true },
-            orderBy: { submittedAt: 'desc' }
+            orderBy: { updatedAt: 'desc' }
         });
         res.json(reports);
     } catch(e) {
@@ -990,7 +1021,14 @@ router.get('/student/me', authMiddleware, roleMiddleware(['STUDENT']), async (re
             where: { id: req.user.id },
             include: { studentProfile: { include: { programManager: true, coach: true, pathway: true, classEnrollments: { include: { classModel: true } } } } }
         });
-        const openCycle = await prisma.reportCycle.findFirst({ where: { status: 'OPEN' }, orderBy: { createdAt: 'desc' } });
+        const pathwayId = user?.studentProfile?.pathwayId || null;
+        const openCycle = await prisma.reportCycle.findFirst({
+            where: {
+                status: 'OPEN',
+                OR: [{ pathwayId }, { pathwayId: null }]
+            },
+            orderBy: { createdAt: 'desc' }
+        });
         let currentReport = null;
         if (openCycle) {
             currentReport = await prisma.weeklyReport.findFirst({ where: { studentId: req.user.id, cycleId: openCycle.id } });
@@ -1004,6 +1042,53 @@ router.get('/student/classes', authMiddleware, roleMiddleware(['STUDENT']), asyn
         const user = await prisma.user.findUnique({ where: { id: req.user.id }, include: { studentProfile: { include: { classEnrollments: { include: { classModel: { include: { instructor: true } } } } } } } });
         res.json(user?.studentProfile?.classEnrollments.map((e: any) => e.classModel) || []);
     } catch(e) { res.status(500).json({ error: 'Server error' }); }
+});
+
+router.get('/student/report-context', authMiddleware, roleMiddleware(['STUDENT']), async (req: any, res: any) => {
+    try {
+        const studentId = req.user.id;
+        const profile = await prisma.studentProfile.findUnique({
+            where: { userId: studentId },
+            include: {
+                classEnrollments: {
+                    where: { isActive: true },
+                    include: { classModel: { include: { instructor: true } } }
+                }
+            }
+        });
+        if (!profile) return res.status(400).json({ error: 'Student profile not found' });
+
+        const currentCycle = await prisma.reportCycle.findFirst({
+            where: {
+                status: 'OPEN',
+                OR: [{ pathwayId: profile.pathwayId }, { pathwayId: null }]
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        const currentReport = currentCycle ? await prisma.weeklyReport.findUnique({
+            where: { studentId_cycleId: { studentId, cycleId: currentCycle.id } },
+            include: { classRatings: true, targetedAnswers: true }
+        }) : null;
+
+        const targetedQuestions = currentCycle ? await prisma.targetedQuestion.findMany({
+            where: {
+                studentId,
+                isActive: true,
+                OR: [{ cycleId: currentCycle.id }, { cycleId: null }]
+            },
+            orderBy: { createdAt: 'asc' }
+        }) : [];
+
+        res.json({
+            classes: profile.classEnrollments.map((e: any) => e.classModel).filter(Boolean),
+            currentCycle,
+            currentReport,
+            targetedQuestions
+        });
+    } catch(e) {
+        res.status(500).json({ error: 'Server error' });
+    }
 });
 
 router.get('/student/history', authMiddleware, roleMiddleware(['STUDENT']), async (req: any, res: any) => {
