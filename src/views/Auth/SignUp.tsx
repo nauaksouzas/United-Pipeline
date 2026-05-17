@@ -59,7 +59,7 @@ export function SignUp() {
     if (formData.classIds.length === 0) return toast.error('Please select at least one class');
     setLoading(true);
     try {
-      const res = await fetch('/api/signup', { credentials: "omit", 
+      const res = await fetch('/api/signup', { credentials: "include", 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)

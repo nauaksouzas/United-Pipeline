@@ -28,9 +28,21 @@ export function AuthProvider({ children }: { children: any }) {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    fetch('/api/auth/session', { headers, credentials: 'omit' })
-      .then(res => {
+    fetch('/api/auth/session', { headers, credentials: 'include' })
+      .then(async (res) => {
         if (!res.ok) return { user: null };
+        
+        const contentType = res.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          const text = await res.text();
+          if (text.includes('Cookie check')) {
+            console.error('Session check intercepted by platform cookie check. Browser may be blocking third-party cookies.');
+          } else {
+            console.error('Session check failed: Non-JSON response', text);
+          }
+          return { user: null };
+        }
+        
         return res.json();
       })
       .then(data => setUser(data.user || null))
@@ -42,9 +54,20 @@ export function AuthProvider({ children }: { children: any }) {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'omit',
+      credentials: 'include',
       body: JSON.stringify({ email, password })
     });
+    
+    const contentType = res.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await res.text();
+      if (text.includes('Cookie check')) {
+        throw new Error("Action required to load your app: Your browser is blocking a required security cookie. Please open the app in a new tab or enable third-party cookies.");
+      }
+      console.error('Server returned non-JSON response:', text);
+      throw new Error(`Server error: Expected JSON but received ${contentType || 'unknown content'}.`);
+    }
+
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
     if (data.token) localStorage.setItem('auth_token', data.token);
@@ -57,7 +80,7 @@ export function AuthProvider({ children }: { children: any }) {
     const res = await fetch('/api/auth/oauth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'omit',
+      credentials: 'include',
       body: JSON.stringify({ idToken: result.idToken }),
     });
     const data = await res.json();
@@ -76,7 +99,7 @@ export function AuthProvider({ children }: { children: any }) {
     const token = localStorage.getItem('auth_token');
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
-    await fetch('/api/auth/logout', { method: 'POST', headers, credentials: 'omit' });
+    await fetch('/api/auth/logout', { method: 'POST', headers, credentials: 'include' });
     localStorage.removeItem('auth_token');
     setUser(null);
   };

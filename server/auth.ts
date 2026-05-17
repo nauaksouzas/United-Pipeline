@@ -1,7 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_ksp_override_me';
+import { JWT_SECRET } from './config.js';
 
 export interface AuthRequest extends Request {
   user?: any;

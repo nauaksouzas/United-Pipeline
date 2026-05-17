@@ -1,15 +1,31 @@
 import { useState, useEffect } from 'react';
 import { Card, Button } from '../../components/ui/Common';
+import { LoadingState, ErrorState, EmptyState } from '../../components/ui/States';
+import { safeFetch } from '../../lib/fetchUtils';
 import { toast } from 'sonner';
+import { Link } from 'react-router-dom';
+import { FileSearch } from 'lucide-react';
 
 export function AllReports() {
   const [reports, setReports] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filterMode, setFilterMode] = useState<string>('ALL');
 
-  const fetchReports = () => {
-    fetch('/api/admin/reports', { credentials: "include" })
-      .then(res => res.json())
-      .then(data => setReports(data));
+  const fetchReports = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+        console.log('[Admin] Fetching all reports...');
+        const data = await safeFetch('/api/admin/reports');
+        console.log('[Admin] Reports loaded');
+        setReports(data);
+    } catch (e: any) {
+        console.error('Failed to load reports', e);
+        setError(e.message || 'Error occurred while loading reports.');
+    } finally {
+        setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -19,17 +35,18 @@ export function AllReports() {
   const handleReview = async (id: string, currentStatus: string) => {
      if (currentStatus === 'REVIEWED') return;
      try {
-       const res = await fetch(`/api/reports/${id}/review`, { method: 'PATCH', credentials: "include" });
-       if (res.ok) {
-           toast.success('Marked as reviewed');
-           fetchReports();
-       } else {
-           toast.error('Failed to update status');
-       }
-     } catch(e) {
-       toast.error('Error updating status');
+       await safeFetch(`/api/reports/${id}/review`, { method: 'PATCH' });
+       toast.success('Marked as reviewed');
+       // Refresh list silently
+       const data = await safeFetch('/api/admin/reports');
+       setReports(data);
+     } catch(e: any) {
+       toast.error(e.message || 'Error updating status');
      }
   };
+
+  if (loading) return <LoadingState message="Loading global reports..." className="min-h-[400px]" />;
+  if (error) return <ErrorState message={error} onRetry={fetchReports} className="min-h-[400px]" />;
 
   const visibleReports = filterMode === 'ALL' ? reports : reports.filter(r => r.status === filterMode);
 
@@ -61,15 +78,21 @@ export function AllReports() {
                   </div>
                </div>
                <div className="flex gap-2">
-                 {r.status !== 'REVIEWED' && (
-                    <Button variant="outline" className="text-xs px-3 h-8 bg-green-50 text-green-700 border-green-200 hover:bg-green-100" onClick={() => handleReview(r.id, r.status)}>Mark Reviewed</Button>
-                 )}
+                 <Link to={`/admin/reports/${r.id}`}>
+                    <Button variant="outline" className="text-xs px-3 h-8 bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100">Review Detail</Button>
+                 </Link>
                  <Button variant="outline" className="text-xs px-3 h-8" onClick={() => window.location.href = `/api/reports/export-pdf?id=${r.id}`}>PDF</Button>
-                 <Button variant="outline" className="text-xs px-3 h-8" onClick={() => window.location.href = `/api/reports/export-docx?id=${r.id}`}>DOCX</Button>
                </div>
             </Card>
           ))}
-          {visibleReports.length === 0 && <p className="text-sm text-[#6B7280]">No reports match your selected filter.</p>}
+          {visibleReports.length === 0 && (
+            <EmptyState 
+              title="No reports found" 
+              message={filterMode === 'ALL' ? "No reports have been submitted to the system yet." : `No reports found with status: ${filterMode}`}
+              icon={FileSearch}
+              className="py-12"
+            />
+          )}
        </div>
     </div>
   );

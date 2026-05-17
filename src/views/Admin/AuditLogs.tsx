@@ -1,15 +1,36 @@
 import { useState, useEffect } from 'react';
 import { Card } from '../../components/ui/Common';
+import { LoadingState, ErrorState, EmptyState } from '../../components/ui/States';
 import { format } from 'date-fns';
+import { ShieldCheck } from 'lucide-react';
 
 export function AuditLogs() {
   const [logs, setLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+        const res = await fetch('/api/admin/audit', { credentials: 'include' });
+        if (!res.ok) throw new Error('Failed to fetch audit records');
+        const data = await res.json();
+        setLogs(data);
+    } catch (e: any) {
+        console.error('Failed to load audit logs', e);
+        setError(e.message || 'Something went wrong while loading system records.');
+    } finally {
+        setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    fetch('/api/admin/audit', { credentials: 'include' })
-      .then(res => res.json())
-      .then(data => setLogs(data));
+    fetchData();
   }, []);
+
+  if (loading) return <LoadingState message="Decrypting audit stream..." className="min-h-[400px]" />;
+  if (error) return <ErrorState message={error} onRetry={fetchData} className="min-h-[400px]" />;
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -55,7 +76,16 @@ export function AuditLogs() {
                 </tr>
               ))}
               {logs.length === 0 && (
-                <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-500">No audit logs found.</td></tr>
+                <tr>
+                  <td colSpan={6} className="px-6 py-12">
+                    <EmptyState 
+                      title="No records found" 
+                      message="System activity logs will appear here as they are generated."
+                      icon={ShieldCheck}
+                      className="p-0 py-12"
+                    />
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>

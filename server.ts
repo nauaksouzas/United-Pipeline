@@ -18,8 +18,18 @@ async function startServer() {
   app.use(express.json());
   app.use(cookieParser());
 
+  // API routes FIRST
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", time: new Date().toISOString() });
+  });
+
   // Mount the Prisma/JWT API
   app.use("/api", apiRoutes);
+
+  // API 404 fallback to prevent HTML response for failed /api requests
+  app.use("/api", (req, res) => {
+    res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl}` });
+  });
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

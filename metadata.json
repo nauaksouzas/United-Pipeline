@@ -1,5 +1,7 @@
 {
   "name": "EchoTrack",
   "description": "EchoTrack — Weekly reporting and engagement platform by KSP Dominion Group.",
-  "version": "1.0.0"
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

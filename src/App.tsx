@@ -50,6 +50,7 @@ import { StudentDashboard } from './views/Student/StudentDashboard';
 import { PMDashboard } from './views/PM/PMDashboard';
 import { CoachDashboard } from './views/Coach/CoachDashboard';
 import { InstructorDashboard } from './views/Instructor/InstructorDashboard';
+import { ReportDetail } from './views/Admin/ReportDetail';
 
 export default function App() {
   return (
@@ -76,12 +77,20 @@ export default function App() {
           <Route path="/admin/analytics" element={<Analytics />} />
           <Route path="/admin/audit" element={<AuditLogs />} />
           <Route path="/admin/settings" element={<Settings />} />
+          <Route path="/admin/reports/:id" element={<ReportDetail />} />
 
           <Route path="/pm" element={<PMDashboard />} />
+          <Route path="/pm/reports/:id" element={<ReportDetail />} />
+          
           <Route path="/coach" element={<CoachDashboard />} />
+          <Route path="/coach/reports/:id" element={<ReportDetail />} />
+          
           <Route path="/instructor" element={<InstructorDashboard />} />
+          <Route path="/instructor/reports/:id" element={<ReportDetail />} />
+
           <Route path="/student" element={<StudentDashboard />} />
           <Route path="/student/report" element={<StudentReportWizard />} />
+          <Route path="/student/reports/:id" element={<ReportDetail />} />
         </Route>
       </Routes>
     </BrowserRouter>

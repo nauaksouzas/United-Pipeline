@@ -3,11 +3,13 @@ import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import { authMiddleware, AuthRequest, roleMiddleware } from './auth';
+import { authMiddleware, AuthRequest, roleMiddleware } from './auth.js';
+import { JWT_SECRET } from './config.js';
 
 const router = Router();
 const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_ksp_override_me';
+
+console.log("[SERVER] Mounting routes...");
 
 function getCookieOptions(req: any) {
   return {
@@ -19,7 +21,7 @@ function getCookieOptions(req: any) {
   };
 }
 
-import { verifyIdToken } from './firebase-admin';
+import { verifyIdToken } from './firebase-admin.js';
 
 router.post('/auth/oauth', async (req, res) => {
   try {
@@ -249,6 +251,29 @@ router.post('/reports', authMiddleware, roleMiddleware(['STUDENT']), async (req,
             }
         });
 
+        // Targeted Answers
+        if (payload.targetedAnswers && Array.isArray(payload.targetedAnswers)) {
+            for (const ans of payload.targetedAnswers) {
+                if (ans.questionId && ans.answer !== undefined) {
+                    await prisma.targetedAnswer.upsert({
+                        where: {
+                            questionId_reportId: {
+                                questionId: ans.questionId,
+                                reportId: report.id
+                            }
+                        },
+                        update: { answer: ans.answer, studentId },
+                        create: {
+                            questionId: ans.questionId,
+                            reportId: report.id,
+                            studentId,
+                            answer: ans.answer
+                        }
+                    });
+                }
+            }
+        }
+
         if (payload.classRatings && Array.isArray(payload.classRatings)) {
             await prisma.classRating.deleteMany({ where: { reportId: report.id } });
             await prisma.classRating.createMany({
@@ -311,19 +336,29 @@ router.post('/reports', authMiddleware, roleMiddleware(['STUDENT']), async (req,
 router.post('/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
+    console.log(`[LOGIN ATTEMPT] Email: ${email}`);
+    
     const user = await prisma.user.findUnique({ where: { email } });
     
-    if (!user || user.accountStatus !== 'ACTIVE' || !user.isActive) {
+    if (!user) {
+      console.log(`[LOGIN FAILED] User not found: ${email}`);
       return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if (user.accountStatus !== 'ACTIVE' || !user.isActive) {
+      console.log(`[LOGIN FAILED] User inactive or pending: ${email}, status: ${user.accountStatus}`);
+      return res.status(401).json({ error: 'Account is not active' });
     }
 
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) {
+      console.log(`[LOGIN FAILED] Wrong password for: ${email}`);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '1d' });
     
+    console.log(`[LOGIN SUCCESS] User: ${user.name} (${user.role})`);
     res.cookie('token', token, getCookieOptions(req));
 
     await prisma.auditLog.create({
@@ -375,7 +410,7 @@ router.get('/admin/invite', authMiddleware, roleMiddleware(['ADMIN']), async (re
     }
 });
 
-import { generateDocx, generatePdf } from './exports';
+import { generateDocx, generatePdf } from './exports.js';
 
 router.get('/reports/export-docx', authMiddleware, async (req: any, res: any) => {
     try {
@@ -516,31 +551,47 @@ router.get('/admin/analytics', authMiddleware, roleMiddleware(['ADMIN']), async 
         let studentsNeedingSupport = 0;
 
         if (cycle) {
-            const submittedCount = await prisma.weeklyReport.count({ where: { cycleId: cycle.id } });
+            const submittedCount = await prisma.weeklyReport.count({ where: { cycleId: cycle.id, status: 'SUBMITTED' } });
             const reviewedCount = await prisma.weeklyReport.count({ where: { cycleId: cycle.id, status: 'REVIEWED' } });
             if (totalStudents > 0) submissionRate = Math.round((submittedCount / totalStudents) * 100);
             if (submittedCount > 0) reviewedRate = Math.round((reviewedCount / submittedCount) * 100);
         }
 
         const openCyclesPastDue = await prisma.reportCycle.count({ where: { status: 'OPEN', endDate: { lt: new Date() } } });
-        // overdue reports simplification
-        const overdueReports = openCyclesPastDue * totalStudents; // roughly
+        const overdueReports = openCyclesPastDue * totalStudents;
 
-        studentsNeedingSupport = await (prisma as any).$queryRaw`SELECT COUNT(DISTINCT "studentId") as cnt FROM "WeeklyReport" WHERE "needsSupport" = 1`;
-        if (typeof studentsNeedingSupport === 'object' && (studentsNeedingSupport as any)?.[0]?.cnt) {
-            studentsNeedingSupport = Number((studentsNeedingSupport as any)[0].cnt);
-        } else {
-             const reports = await prisma.weeklyReport.findMany({ where: { needsSupport: true }, select: { studentId: true } });
-             const uniqueStudents = new Set(reports.map(r => r.studentId));
-             studentsNeedingSupport = uniqueStudents.size;
-        }
+        const needsSupportReports = await prisma.weeklyReport.findMany({ where: { needsSupport: true }, select: { studentId: true } });
+        studentsNeedingSupport = new Set(needsSupportReports.map(r => r.studentId)).size;
 
         const activeAlertsCount = await prisma.alert.count({ where: { resolved: false } });
 
-        const pathways = await prisma.pathway.findMany({ include: { studentProfiles: true } });
-
         const typeGroups = await prisma.alert.groupBy({ by: ['type'], _count: { id: true } });
         const alertDistribution = typeGroups.map(g => ({ type: g.type, count: g._count.id }));
+
+        const recentActivity = await prisma.auditLog.findMany({
+            orderBy: { createdAt: 'desc' },
+            take: 10
+        });
+
+        // Submission trend (last 7 days)
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const trend = await prisma.weeklyReport.groupBy({
+            by: ['createdAt'],
+            _count: { id: true },
+            where: { createdAt: { gte: sevenDaysAgo } },
+            orderBy: { createdAt: 'asc' }
+        });
+        const submissionTrend = trend.map(t => ({ date: t.createdAt.toISOString().split('T')[0], count: t._count.id }));
+
+        // Class performance aggregation
+        const allRatings = await prisma.classRating.findMany();
+        const performance = {
+            EXCEEDING: allRatings.filter(r => r.rating === 'EXCEEDING').length,
+            MEETING: allRatings.filter(r => r.rating === 'MEETING').length,
+            APPROACHING: allRatings.filter(r => r.rating === 'APPROACHING').length,
+            BEGINNING: allRatings.filter(r => r.rating === 'BEGINNING').length,
+        };
 
         res.json({
             totalStudents,
@@ -548,21 +599,16 @@ router.get('/admin/analytics', authMiddleware, roleMiddleware(['ADMIN']), async 
             totalProgramManagers: await prisma.user.count({ where: { role: 'PROGRAM_MANAGER', isActive: true } }),
             totalPathways: await prisma.pathway.count({ where: { isActive: true } }),
             totalClasses: await prisma.classModel.count({ where: { isActive: true } }),
-            submittedReportsThisCycle: cycle ? await prisma.weeklyReport.count({ where: { cycleId: cycle.id } }) : 0,
+            submittedReportsThisCycle: cycle ? await prisma.weeklyReport.count({ where: { cycleId: cycle.id, status: 'SUBMITTED' } }) : 0,
             submissionRate,
             reviewedRate,
             overdueReports,
             studentsNeedingSupport,
             activeAlerts: activeAlertsCount,
             alertDistribution,
-            // Provide empty arrays instead of random numbers
-            classPerformance: { overall: { EXCEEDING: 0, MEETING: 0, APPROACHING: 0, BEGINNING: 0 }, byPathway: [] },
-            submissionTrend: [],
-            topCoaches: [],
-            topPathways: [],
-            classesNeedingAttention: [],
-            recent30DaySubmissions: [],
-            recentActivity: []
+            classPerformance: { overall: performance, byPathway: [] },
+            submissionTrend,
+            recentActivity
         });
     } catch(e) {
         res.status(500).json({ error: 'Server error' });
@@ -874,9 +920,13 @@ router.get('/admin/audit', authMiddleware, roleMiddleware(['ADMIN']), async (req
 
 router.get('/targeted-questions', authMiddleware, async (req: any, res: any) => {
     try {
-        // Mock returning questions
+        const where: any = { isActive: true };
+        if (req.user.role === 'STUDENT') {
+            where.studentId = req.user.id;
+        }
+        
         const questions = await prisma.targetedQuestion.findMany({
-            where: { isActive: true },
+            where,
             include: { cycle: true }
         });
         res.json(questions);
@@ -938,6 +988,25 @@ router.get('/student/reports', authMiddleware, roleMiddleware(['STUDENT']), asyn
             orderBy: { submittedAt: 'desc' }
         });
         res.json(reports);
+    } catch(e) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+router.get('/reports/:id', authMiddleware, async (req: any, res: any) => {
+    try {
+        const report = await prisma.weeklyReport.findUnique({
+            where: { id: req.params.id },
+            include: {
+                student: { include: { studentProfile: { include: { coach: true, programManager: true, pathway: true } } } },
+                cycle: true,
+                classRatings: { include: { classModel: true } },
+                targetedAnswers: { include: { question: true } },
+                coachFeedback: { include: { coach: true } }
+            }
+        });
+        if (!report) return res.status(404).json({ error: 'Report not found' });
+        res.json(report);
     } catch(e) {
         res.status(500).json({ error: 'Server error' });
     }
