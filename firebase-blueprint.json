@@ -1,0 +1,46 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "System user with role-based access",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["ADMIN", "PROGRAM_MANAGER", "COACH", "INSTRUCTOR", "STUDENT"] },
+        "accountStatus": { "type": "string", "enum": ["ACTIVE", "INVITED", "DISABLED"] },
+        "avatarUrl": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "name", "role"]
+    },
+    "WeeklyReport": {
+      "title": "Weekly Report",
+      "description": "Periodic student report",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "cycleId": { "type": "string" },
+        "status": { "type": "string", "enum": ["DRAFT", "SUBMITTED", "REVIEWED"] },
+        "energy": { "type": "integer" },
+        "mood": { "type": "integer" },
+        "attendance": { "type": "integer" },
+        "confidence": { "type": "integer" },
+        "submittedAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "cycleId", "status"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User profile data"
+    },
+    "reports/{reportId}": {
+      "schema": "WeeklyReport",
+      "description": "Weekly reports collection"
+    }
+  }
+}

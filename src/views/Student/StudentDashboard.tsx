@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Card, Button } from '../../components/ui/Common';
 import { LoadingState, ErrorState, EmptyState } from '../../components/ui/States';
-import { safeFetch } from '../../lib/fetchUtils';
+import { safeFetch, downloadFile } from '../../lib/fetchUtils';
 import { useAuth } from '../../hooks/useAuth';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import { FileText, CheckCircle2, Clock, Inbox } from 'lucide-react';
 
 export function StudentDashboard() {
@@ -37,6 +38,22 @@ export function StudentDashboard() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const handleExportPDF = async (id: string) => {
+    try {
+      await downloadFile(`/api/reports/export-pdf?id=${id}`, `Report_${id}.pdf`);
+    } catch (e: any) {
+      toast.error(e.message || 'Export failed');
+    }
+  };
+
+  const handleExportDOCX = async (id: string) => {
+    try {
+      await downloadFile(`/api/reports/export-docx?id=${id}`, `Report_${id}.docx`);
+    } catch (e: any) {
+      toast.error(e.message || 'Export failed');
+    }
+  };
 
   if (loading) return <LoadingState message="Preparing your workspace..." className="min-h-[400px]" />;
   if (error) return <ErrorState message={error} onRetry={fetchData} className="min-h-[400px]" />;
@@ -134,8 +151,8 @@ export function StudentDashboard() {
                    </div>
                 </div>
                 <div className="flex gap-4">
-                  <Button variant="outline" className="text-xs px-3 h-8" onClick={() => window.location.href = `/api/reports/export-pdf?id=${r.id}`}>PDF</Button>
-                  <Button variant="outline" className="text-xs px-3 h-8" onClick={() => window.location.href = `/api/reports/export-docx?id=${r.id}`}>DOCX</Button>
+                  <Button variant="outline" className="text-xs px-3 h-8" onClick={() => handleExportPDF(r.id)}>PDF</Button>
+                  <Button variant="outline" className="text-xs px-3 h-8" onClick={() => handleExportDOCX(r.id)}>DOCX</Button>
                 </div>
              </Card>
            ))

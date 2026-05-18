@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Button } from '../../components/ui/Common';
 import { useAuth } from '../../hooks/useAuth';
+import { safeFetch, downloadFile } from '../../lib/fetchUtils';
 import { toast } from 'sonner';
 import { 
   ArrowLeft, CheckCircle2, MessageSquare, AlertCircle, 
@@ -19,51 +20,56 @@ export function ReportDetail() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`/api/reports/${id}`)
-      .then(res => res.json())
+    safeFetch(`/api/reports/${id}`)
       .then(data => {
         setReport(data);
         setLoading(false);
       })
-      .catch(() => toast.error('Failed to load report'));
+      .catch(() => {
+        toast.error('Failed to load report');
+        setLoading(false);
+      });
   }, [id]);
 
   const handleReview = async () => {
     try {
-      const res = await fetch(`/api/reports/${id}/review`, { method: 'PATCH' });
-      if (res.ok) {
-        toast.success('Report marked as reviewed');
-        setReport({ ...report, status: 'REVIEWED' });
-      }
-    } catch(e) {
-      toast.error('Failed to mark as reviewed');
+      await safeFetch(`/api/reports/${id}/review`, { method: 'PATCH' });
+      toast.success('Report marked as reviewed');
+      setReport({ ...report, status: 'REVIEWED' });
+    } catch(e: any) {
+      toast.error(e.message || 'Failed to mark as reviewed');
     }
   };
 
   const submitFeedback = async () => {
     if (!feedback.trim()) return;
     try {
-      const res = await fetch(`/api/reports/${id}/feedback`, {
+      await safeFetch(`/api/reports/${id}/feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: feedback })
       });
-      if (res.ok) {
-        const data = await res.json();
-        toast.success('Feedback added');
-        setReport({
-          ...report,
-          coachFeedback: [...(report.coachFeedback || []), { 
-            id: Date.now().toString(), 
-            feedback: feedback, 
-            coach: user, 
-            createdAt: new Date().toISOString() 
-          }]
-        });
-        setFeedback('');
-      }
-    } catch(e) {
-      toast.error('Failed to add feedback');
+      toast.success('Feedback added');
+      setReport({
+        ...report,
+        coachFeedback: [...(report.coachFeedback || []), { 
+          id: Date.now().toString(), 
+          feedback: feedback, 
+          coach: user, 
+          createdAt: new Date().toISOString() 
+        }]
+      });
+      setFeedback('');
+    } catch(e: any) {
+      toast.error(e.message || 'Failed to add feedback');
+    }
+  };
+
+  const handleExportPDF = async () => {
+    try {
+      await downloadFile(`/api/reports/export-pdf?id=${id}`, `Report_${id}.pdf`);
+    } catch (e: any) {
+      toast.error(e.message || 'Export failed');
     }
   };
 
@@ -90,7 +96,7 @@ export function ReportDetail() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="sm" onClick={() => window.location.href = `/api/reports/export-pdf?id=${id}`}>
+          <Button variant="outline" size="sm" onClick={handleExportPDF}>
             Export PDF
           </Button>
           {report.status !== 'REVIEWED' && (

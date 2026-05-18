@@ -4,10 +4,16 @@
  * This prevents "Unexpected token <" errors and provides better debugging info.
  */
 export async function safeFetch(url: string, options: RequestInit = {}) {
+  const headers = new Headers(options.headers || {});
+  const token = localStorage.getItem('auth_token');
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
   const response = await fetch(url, {
     ...options,
-    // Default to include credentials for AI Studio environment
-    credentials: options.credentials || 'include',
+    headers,
+    credentials: 'omit',
   });
 
   const text = await response.text();
@@ -20,7 +26,7 @@ export async function safeFetch(url: string, options: RequestInit = {}) {
       throw new Error("Action required: Your browser is blocking a security cookie. Please open in a new tab.");
     }
     console.error(`[safeFetch] Received non-JSON response from ${url}:`, text.substring(0, 500));
-    throw new Error(`Server returned non-JSON response (${response.status})`);
+    throw new Error(`Server returned non-JSON response (${response.status}) for ${url}`);
   }
 
   try {
@@ -39,4 +45,28 @@ export async function safeFetch(url: string, options: RequestInit = {}) {
     console.error(`[safeFetch] Failed to parse JSON from ${url}. Body:`, text);
     throw new Error("Failed to process server response.");
   }
+}
+
+export async function downloadFile(url: string, filename: string) {
+  const headers = new Headers();
+  const token = localStorage.getItem('auth_token');
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  const response = await fetch(url, { headers, credentials: 'omit' });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Download failed: ${text}`);
+  }
+
+  const blob = await response.blob();
+  const downloadUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = downloadUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(downloadUrl);
 }

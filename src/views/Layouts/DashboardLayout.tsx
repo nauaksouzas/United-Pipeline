@@ -44,36 +44,20 @@ export function DashboardLayout() {
         ];
       case 'PROGRAM_MANAGER':
         return [
-          { label: 'Dashboard',     href: '/pm',            icon: LayoutDashboard },
-          { label: 'Manage Staff',  href: '/pm/staff',      icon: UserCog },
-          { label: 'Students',      href: '/pm/students',   icon: GraduationCap },
-          { label: 'Communities',   href: '/pm/communities',icon: Users },
-          { label: 'Reports',       href: '/pm/reports',    icon: FileText },
-          { label: 'Questions',     href: '/pm/questions',  icon: Target },
-          { label: 'Analytics',     href: '/pm/analytics',  icon: BarChart3 },
+          { label: 'Dashboard',     href: '/pm',            icon: LayoutDashboard }
         ];
       case 'INSTRUCTOR':
         return [
-          { label: 'Dashboard',  href: '/instructor',          icon: LayoutDashboard },
-          { label: 'My Classes', href: '/instructor/classes',  icon: BookOpen },
-          { label: 'Reports',    href: '/instructor/reports',  icon: FileText },
-          { label: 'Questions',  href: '/instructor/questions',icon: Target },
+          { label: 'Dashboard',  href: '/instructor',          icon: LayoutDashboard }
         ];
       case 'COACH':
         return [
-          { label: 'Dashboard',    href: '/coach',          icon: LayoutDashboard },
-          { label: 'My Students',  href: '/coach/students', icon: Users },
-          { label: 'Reports',      href: '/coach/reports',  icon: FileText },
-          { label: 'Alerts',       href: '/coach/alerts',   icon: AlertTriangle },
-          { label: 'Questions',    href: '/coach/questions',icon: Target },
-          { label: 'Analytics',    href: '/coach/analytics',icon: BarChart3 },
+          { label: 'Dashboard',    href: '/coach',          icon: LayoutDashboard }
         ];
       case 'STUDENT':
         return [
           { label: 'Dashboard',      href: '/student',         icon: LayoutDashboard },
-          { label: 'Weekly Report',  href: '/student/report',  icon: FileText },
-          { label: 'Report History', href: '/student/history', icon: ClipboardList },
-          { label: 'My Classes',     href: '/student/classes', icon: BookOpen },
+          { label: 'Weekly Report',  href: '/student/report',  icon: FileText }
         ];
       default: return [];
     }

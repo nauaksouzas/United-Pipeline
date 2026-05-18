@@ -1,0 +1,79 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Phase 3: Primitive Definition
+    function isSignedIn() { return request.auth != null; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function getUserData(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data;
+    }
+
+    function hasRole(role) {
+      return isSignedIn() && getUserData(request.auth.uid).role == role;
+    }
+
+    // 1. Validation Blueprints
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'name', 'role']) &&
+             data.email is string && data.email.size() <= 256 &&
+             data.name is string && data.name.size() <= 128 &&
+             data.role in ['ADMIN', 'PROGRAM_MANAGER', 'COACH', 'INSTRUCTOR', 'STUDENT'];
+    }
+
+    function isValidReport(data) {
+      return data.keys().hasAll(['studentId', 'cycleId', 'status']) &&
+             data.studentId is string && data.cycleId is string &&
+             data.status in ['DRAFT', 'SUBMITTED', 'REVIEWED'] &&
+             (data.energy == null || (data.energy >= 0 && data.energy <= 10)) &&
+             (data.mood == null || (data.mood >= 0 && data.mood <= 10));
+    }
+
+    // Match Blocks
+    match /users/{userId} {
+      allow get: if isSignedIn() && (isOwner(userId) || hasRole('ADMIN') || hasRole('COACH') || hasRole('PROGRAM_MANAGER'));
+      allow list: if hasRole('ADMIN') || hasRole('PROGRAM_MANAGER');
+      
+      allow create: if isSignedIn() && isOwner(userId) && isValidUser(incoming()) && incoming().role == 'STUDENT';
+      allow update: if isSignedIn() && (
+        (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatarUrl']) && isValidUser(incoming())) ||
+        (hasRole('ADMIN') && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'accountStatus', 'isActive']) && isValidUser(incoming()))
+      );
+    }
+
+    match /reports/{reportId} {
+      allow get: if isSignedIn() && (
+        isOwner(existing().studentId) || 
+        hasRole('ADMIN') || 
+        hasRole('COACH') || 
+        hasRole('PROGRAM_MANAGER') ||
+        hasRole('INSTRUCTOR')
+      );
+      
+      allow list: if isSignedIn() && (
+        (resource.data.studentId == request.auth.uid) ||
+        hasRole('ADMIN') || hasRole('COACH') || hasRole('PROGRAM_MANAGER')
+      );
+
+      allow create: if isSignedIn() && isOwner(incoming().studentId) && isValidReport(incoming()) && incoming().status == 'DRAFT';
+      
+      allow update: if isSignedIn() && isValidReport(incoming()) && (
+        // Student updating their draft
+        (isOwner(existing().studentId) && existing().status == 'DRAFT' && incoming().diff(existing()).affectedKeys().hasOnly(['energy', 'mood', 'attendance', 'confidence', 'status'])) ||
+        // Staff reviewing
+        ((hasRole('ADMIN') || hasRole('COACH') || hasRole('PROGRAM_MANAGER')) && incoming().diff(existing()).affectedKeys().hasOnly(['status']))
+      );
+    }
+  }
+}

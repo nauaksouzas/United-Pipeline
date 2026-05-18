@@ -13,11 +13,15 @@ function initOnce() {
     const sa = JSON.parse(fs.readFileSync(saPath, 'utf-8'));
     admin.initializeApp({ credential: admin.credential.cert(sa) });
   } else {
-    // Fallback: rely on GOOGLE_APPLICATION_CREDENTIALS env if present,
-    // otherwise initialize without credentials (verifyIdToken will still
-    // contact Google's public certs over the network — works for token
-    // verification even without a service account).
-    admin.initializeApp({ projectId: 'gen-lang-client-0430377903' });
+    // Dynamically load project ID from config
+    try {
+      const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      admin.initializeApp({ projectId: config.projectId });
+    } catch (e) {
+      console.error("Failed to load firebase-applet-config.json in admin init", e);
+      admin.initializeApp();
+    }
   }
 }
 

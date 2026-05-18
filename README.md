@@ -1,20 +1,30 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# KSP Dominion Group / EchoTrack Weekly Report System
 
-# Run and deploy your AI Studio app
+A role-based weekly report system for KSP Dominion Group and EchoTrack. 
+Supports students submitting weekly reports, and Admin, Program Managers, Coaches, and Instructors reviewing, tracking, and engaging with those reports.
 
-This contains everything you need to run your app locally.
+## Prerequisites
+- Node.js (v18+)
+- SQLite (included)
 
-View your app in AI Studio: https://ai.studio/apps/752137eb-d681-460e-b35c-eb81a0cd6303
-
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
+## Setup
+1. Copy the example environment file:
+   `cp .env.example .env`
+2. Update the `.env` file with a secure `JWT_SECRET`.
+3. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+4. Setup the database and run migrations:
+   `npx prisma db push`
+   *(Optional)* Seed default data:
+   `NODE_ENV=development npx prisma db seed`
+
+## Running Locally
+Start both the Vite frontend and Express backend:
+`npm run dev`
+
+## Roles
+- **Admin**: Full access.
+- **Program Manager**: Views their assigned students, coaches, and alerts.
+- **Coach**: Tracks individual student progress and flags alerts.
+- **Instructor**: Views class feedback and performance metrics.
+- **Student**: Submits weekly reports and views class tracking.

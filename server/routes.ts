@@ -154,8 +154,21 @@ router.post('/signup', async (req, res) => {
         const { name, email, password, programManagerId, coachId, pathwayId, classIds } = req.body;
         const normalizedEmail = String(email).toLowerCase().trim();
 
+        if (!name || !email || !password || password.length < 8) {
+            return res.status(400).json({ error: 'Valid name, email, and password (min 8 chars) required.' });
+        }
+
         const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
         if (existing) return res.status(400).json({ error: 'Email already in use' });
+
+        if (programManagerId) {
+            const pm = await prisma.user.findUnique({ where: { id: programManagerId } });
+            if (!pm || pm.role !== 'PROGRAM_MANAGER') return res.status(400).json({ error: 'Invalid PM selected' });
+        }
+        if (coachId) {
+            const coach = await prisma.user.findUnique({ where: { id: coachId } });
+            if (!coach || coach.role !== 'COACH') return res.status(400).json({ error: 'Invalid coach selected' });
+        }
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -923,6 +936,10 @@ router.get('/targeted-questions', authMiddleware, async (req: any, res: any) => 
         const where: any = { isActive: true };
         if (req.user.role === 'STUDENT') {
             where.studentId = req.user.id;
+        } else if (req.user.role === 'PROGRAM_MANAGER') {
+            where.student = { studentProfile: { programManagerId: req.user.id } };
+        } else if (req.user.role === 'COACH') {
+            where.student = { studentProfile: { coachId: req.user.id } };
         }
         
         const questions = await prisma.targetedQuestion.findMany({
@@ -938,8 +955,19 @@ router.get('/targeted-questions', authMiddleware, async (req: any, res: any) => 
 router.post('/targeted-questions', authMiddleware, roleMiddleware(['ADMIN', 'PROGRAM_MANAGER']), async (req: any, res: any) => {
     try {
         const { question, studentId, cycleId } = req.body;
+        
+        if (req.user.role === 'PROGRAM_MANAGER') {
+            const student = await prisma.user.findUnique({
+                where: { id: studentId },
+                include: { studentProfile: true }
+            });
+            if (student?.studentProfile?.programManagerId !== req.user.id) {
+                return res.status(403).json({ error: 'Unauthorized to target this student' });
+            }
+        }
+        
         const created = await prisma.targetedQuestion.create({
-            data: { question, studentId, cycleId, creatorId: (req as any).user?.id }
+            data: { question, studentId, cycleId, creatorId: req.user.id }
         });
         res.json(created);
     } catch(e) {
@@ -950,6 +978,13 @@ router.post('/targeted-questions', authMiddleware, roleMiddleware(['ADMIN', 'PRO
 router.delete('/targeted-questions', authMiddleware, roleMiddleware(['ADMIN', 'PROGRAM_MANAGER']), async (req: any, res: any) => {
     try {
         const { id } = req.query;
+        const q = await prisma.targetedQuestion.findUnique({ where: { id: String(id) } });
+        if (!q) return res.status(404).json({ error: 'Not found' });
+        
+        if (req.user.role === 'PROGRAM_MANAGER' && q.creatorId !== req.user.id) {
+            return res.status(403).json({ error: 'Unauthorized to delete this question' });
+        }
+
         await prisma.targetedQuestion.update({
             where: { id: String(id) },
             data: { isActive: false }
@@ -998,7 +1033,7 @@ router.get('/reports/:id', authMiddleware, async (req: any, res: any) => {
         const report = await prisma.weeklyReport.findUnique({
             where: { id: req.params.id },
             include: {
-                student: { include: { studentProfile: { include: { coach: true, programManager: true, pathway: true } } } },
+                student: { include: { studentProfile: { include: { coach: true, programManager: true, pathway: true, classEnrollments: { include: { classModel: true } } } } } },
                 cycle: true,
                 classRatings: { include: { classModel: true } },
                 targetedAnswers: { include: { question: true } },
@@ -1006,15 +1041,43 @@ router.get('/reports/:id', authMiddleware, async (req: any, res: any) => {
             }
         });
         if (!report) return res.status(404).json({ error: 'Report not found' });
+
+        const reqUser = req.user;
+        let authorized = false;
+        if (reqUser.role === 'ADMIN') authorized = true;
+        else if (reqUser.role === 'STUDENT' && report.studentId === reqUser.id) authorized = true;
+        else if (reqUser.role === 'COACH' && report.student.studentProfile?.coachId === reqUser.id) authorized = true;
+        else if (reqUser.role === 'PROGRAM_MANAGER' && report.student.studentProfile?.programManagerId === reqUser.id) authorized = true;
+        else if (reqUser.role === 'INSTRUCTOR') {
+             const enrollments = report.student.studentProfile?.classEnrollments || [];
+             authorized = enrollments.some((ce:any) => ce.classModel?.instructorId === reqUser.id);
+        }
+
+        if (!authorized) return res.status(403).json({ error: 'Unauthorized' });
+
         res.json(report);
     } catch(e) {
         res.status(500).json({ error: 'Server error' });
     }
 });
 
-router.patch('/reports/:id/review', authMiddleware, roleMiddleware(['ADMIN', 'PROGRAM_MANAGER', 'COACH']), async (req, res) => {
+router.patch('/reports/:id/review', authMiddleware, roleMiddleware(['ADMIN', 'PROGRAM_MANAGER', 'COACH']), async (req: any, res: any) => {
     try {
         const { id } = req.params;
+        const report = await prisma.weeklyReport.findUnique({
+            where: { id },
+            include: { student: { include: { studentProfile: true } } }
+        });
+        if (!report) return res.status(404).json({ error: 'Report not found' });
+
+        const reqUser = req.user;
+        let authorized = false;
+        if (reqUser.role === 'ADMIN') authorized = true;
+        else if (reqUser.role === 'COACH' && report.student.studentProfile?.coachId === reqUser.id) authorized = true;
+        else if (reqUser.role === 'PROGRAM_MANAGER' && report.student.studentProfile?.programManagerId === reqUser.id) authorized = true;
+
+        if (!authorized) return res.status(403).json({ error: 'Unauthorized to review this report' });
+
         await prisma.weeklyReport.update({
             where: { id },
             data: { status: 'REVIEWED' }
@@ -1121,6 +1184,20 @@ router.get('/coach/alerts', authMiddleware, roleMiddleware(['COACH']), async (re
 
 router.patch('/alerts/:id/resolve', authMiddleware, roleMiddleware(['ADMIN', 'PROGRAM_MANAGER', 'COACH']), async (req: any, res: any) => {
     try {
+        const alertInfo = await prisma.alert.findUnique({
+            where: { id: req.params.id },
+            include: { student: { include: { studentProfile: true } } }
+        });
+        if (!alertInfo) return res.status(404).json({ error: 'Alert not found' });
+
+        const reqUser = req.user;
+        let authorized = false;
+        if (reqUser.role === 'ADMIN') authorized = true;
+        else if (reqUser.role === 'COACH' && alertInfo.student.studentProfile?.coachId === reqUser.id) authorized = true;
+        else if (reqUser.role === 'PROGRAM_MANAGER' && alertInfo.student.studentProfile?.programManagerId === reqUser.id) authorized = true;
+        
+        if (!authorized) return res.status(403).json({ error: 'Unauthorized to resolve this alert' });
+
         await prisma.alert.update({ where: { id: req.params.id }, data: { resolved: true } });
         res.json({ success: true });
     } catch(e) { res.status(500).json({ error: 'Server error' }); }
@@ -1271,6 +1348,20 @@ router.get('/pm/analytics', authMiddleware, roleMiddleware(['PROGRAM_MANAGER']),
 router.post('/reports/:id/feedback', authMiddleware, roleMiddleware(['ADMIN', 'PROGRAM_MANAGER', 'COACH']), async (req: any, res: any) => {
     try {
         const { text } = req.body;
+        const report = await prisma.weeklyReport.findUnique({
+            where: { id: req.params.id },
+            include: { student: { include: { studentProfile: true } } }
+        });
+        if (!report) return res.status(404).json({ error: 'Report not found' });
+
+        const reqUser = req.user;
+        let authorized = false;
+        if (reqUser.role === 'ADMIN') authorized = true;
+        else if (reqUser.role === 'COACH' && report.student.studentProfile?.coachId === reqUser.id) authorized = true;
+        else if (reqUser.role === 'PROGRAM_MANAGER' && report.student.studentProfile?.programManagerId === reqUser.id) authorized = true;
+
+        if (!authorized) return res.status(403).json({ error: 'Unauthorized to give feedback on this report' });
+
         const feedback = await prisma.coachFeedback.create({
             data: {
                 reportId: req.params.id,
