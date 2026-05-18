@@ -1,6 +1,4 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { toast } from 'sonner';
 
 import { safeFetch } from '../lib/fetchUtils';
 
@@ -26,11 +24,11 @@ export function AuthProvider({ children }: { children: any }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('auth_token');
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
-    safeFetch('/api/auth/session', { headers })
+    fetch('/api/auth/session', { credentials: 'include' })
+      .then(res => {
+        if (!res.ok) return { user: null };
+        return res.json();
+      })
       .then(data => setUser(data.user || null))
       .catch((e) => {
         console.error('Session check failed:', e);
@@ -40,54 +38,41 @@ export function AuthProvider({ children }: { children: any }) {
   }, []);
 
   const login = async (email: string, password: string) => {
-    try {
-      const data = await safeFetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
-      
-      if (data.token) localStorage.setItem('auth_token', data.token);
-      setUser(data.user);
-    } catch (e: any) {
-      console.error('Login error:', e);
-      throw e;
-    }
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    localStorage.removeItem('auth_token');
+    setUser(data.user);
   };
 
   const loginWithProvider = async (provider: 'google' | 'microsoft' | 'apple') => {
-    try {
-      const { signInWith } = await import('../firebase');
-      const result = await signInWith(provider);
-      
-      const data = await safeFetch('/api/auth/oauth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken: result.idToken }),
-      });
-      
-      if (data.token) localStorage.setItem('auth_token', data.token);
-      setUser(data.user);
-    } catch (error: any) {
-      if (error.code === 'auth/unauthorized-domain' || error.message?.includes('unauthorized-domain') || error.message?.includes('auth/unauthorized-domain')) {
-        const domain = window.location.hostname;
-        console.error(`[Firebase] Domain "${domain}" is not authorized.`);
-        throw new Error(`Domain not authorized. Please open Firebase Console and add "${domain}" to Authentication -> Settings -> Authorized Domains.`);
-      }
-      throw error;
+    const { signInWith } = await import('../firebase');
+    const result = await signInWith(provider);
+    const res = await fetch('/api/auth/oauth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ idToken: result.idToken }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const err: any = new Error(data.error || 'OAuth failed');
+      err.status = res.status;
+      err.email = data.email;
+      err.name = data.name;
+      throw err;
     }
+    localStorage.removeItem('auth_token');
+    setUser(data.user);
   };
 
   const logout = async () => {
-    const token = localStorage.getItem('auth_token');
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    
-    try {
-      await safeFetch('/api/auth/logout', { method: 'POST', headers });
-    } catch(e) {
-      console.error('Logout error:', e);
-    }
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
     localStorage.removeItem('auth_token');
     setUser(null);
   };

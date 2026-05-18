@@ -21,12 +21,14 @@ export function SetupAccount() {
 
     setLoading(true);
     try {
-      const data = await safeFetch('/api/setup-account', {
+      const res = await fetch('/api/setup-account', { credentials: "include", 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, password })
       });
-      if (data.token) localStorage.setItem('auth_token', data.token);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      localStorage.removeItem('auth_token');
 
       toast.success('Account setup complete! Redirecting...');
       setTimeout(() => {
