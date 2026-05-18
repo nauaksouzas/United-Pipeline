@@ -4,7 +4,14 @@ dist/
 coverage/
 .DS_Store
 *.log
-.env*
+
+.env
+.env.*
 !.env.example
+
+server/firebase-service-account.json
+serviceAccountKey.json
+*.service-account.json
+firebase-service-account.json
 
 /src/generated/prisma

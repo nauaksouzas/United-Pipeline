@@ -1,10 +1,10 @@
 {
   "projectId": "echotrack-db76d",
-  "appId": "1:735065066993:web:1e15c6a867cb90797b4850",
+  "appId": "1:735065066993:web:35e9fb6944a933707b4850",
   "apiKey": "AIzaSyCKk93ppGh_P-M_EtUf5ZeePkPROMchAqw",
   "authDomain": "echotrack-db76d.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-752137eb-d681-460e-b35c-eb81a0cd6303",
   "storageBucket": "echotrack-db76d.firebasestorage.app",
   "messagingSenderId": "735065066993",
-  "measurementId": ""
+  "measurementId": "G-1CNBXL0XCS"
 }

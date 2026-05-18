@@ -32,7 +32,8 @@ router.post('/auth/oauth', async (req, res) => {
     try {
       decoded = await verifyIdToken(idToken);
     } catch (e) {
-      return res.status(401).json({ error: 'Invalid Firebase token' });
+      const message = e instanceof Error ? e.message : 'Invalid Firebase token';
+      return res.status(401).json({ error: message });
     }
 
     if (!decoded.email) {
